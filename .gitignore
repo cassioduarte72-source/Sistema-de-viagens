@@ -1,0 +1,59 @@
+# ===== SEGURANÇA =====
+.env
+.env.*
+!.env.example
+
+# ===== PYTHON / DJANGO =====
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+eggs/
+parts/
+var/
+sdist/
+develop-eggs/
+.installed.cfg
+lib/
+lib64/
+*.sqlite3
+db.sqlite3
+
+# Virtual environments
+venv/
+.venv/
+env/
+.env/
+
+# pytest
+.pytest_cache/
+.coverage
+htmlcov/
+
+# ===== NODE / REACT =====
+node_modules/
+dist/
+build/
+.npm
+*.log
+npm-debug.log*
+
+# ===== DOCKER =====
+postgres_data/
+
+# ===== IDE =====
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# ===== LOGS =====
+*.log
+logs/
