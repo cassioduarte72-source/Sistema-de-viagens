@@ -952,7 +952,7 @@ function Passo2({ selecao, onSalvar, onVoltar }) {
   const upP=(i,k,v)=>{const p=[...form.passagens];p[i][k]=v;setForm(p2=>({...p2,passagens:p}));};
   const selAtiv=e=>{const at=DB_ATIVIDADES.find(a=>a.codigo===e.target.value);setForm(p=>({...p,atividade_cod:e.target.value,atividade_nome:at?at.nome:""}));};
   const totD=form.diarias.reduce((s,d)=>s+(parseFloat(d.total)||0),0);
-  const totA=form.adiant.reduce((s,a)=>s+(parseFloat(a.valor)||0),0);
+  const totA=form.adiant.reduce((s,a)=>s+(parseFloat(String(a.valor).replace(/\./g,"").replace(",","."))||0),0);
   const totRT=parseFloat(form.vl_rt||0)||0;
   const totG=totD+totA+totRT;
   const mostraPassagens=form.meio==="Aéreo"||form.meio==="Aero/Rodoviário";
@@ -1092,7 +1092,7 @@ function Passo2({ selecao, onSalvar, onVoltar }) {
               <tr key={i}>
                 <td style={{textAlign:"center",fontWeight:700,color:"#8d9db0"}}>{i+1}</td>
                 <td><select tabIndex={0} value={a.natureza} onChange={e=>upA(i,"natureza",e.target.value)} style={{color:"#1a2332"}}><option value="">-- Selecione --</option>{NATUREZAS.map(n=><option key={n} style={{color:"#1a2332"}}>{n}</option>)}</select></td>
-                <td><input tabIndex={0} value={a.valor} onChange={e=>{const v=e.target.value.replace(/[^\d,\.]/g,"");upA(i,"valor",v);}} onBlur={e=>{const n=parseFloat(e.target.value.replace(",","."));if(!isNaN(n))upA(i,"valor",n.toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2}));}} placeholder="0,00" style={{color:"#1a2332",textAlign:"right"}} /></td>
+                <td><input tabIndex={0} value={a.valor} onChange={e=>{const v=e.target.value.replace(/[^\d,\.]/g,"");upA(i,"valor",v);}} onBlur={e=>{const n=parseFloat(e.target.value.replace(/\./g,"").replace(",","."));if(!isNaN(n))upA(i,"valor",n.toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2}));}} placeholder="0,00" style={{color:"#1a2332",textAlign:"right"}} /></td>
                 <td><textarea tabIndex={0} value={a.just} onChange={e=>upA(i,"just",e.target.value)} style={{color:"#1a2332"}} placeholder="Justificativa..." /></td>
               </tr>
             ))}</tbody>
