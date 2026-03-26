@@ -1,0 +1,12 @@
+version: '3.9'
+
+services:
+  frontend:
+    build:
+      context: ./sav-frontend
+      dockerfile: Dockerfile
+    container_name: sav_frontend
+    ports:
+      - "80:80"
+    restart: unless-stopped
+
