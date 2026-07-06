@@ -1,7 +1,7 @@
 Django==5.0.4
 djangorestframework==3.15.1
 djangorestframework-simplejwt==5.3.1
-psycopg2-binary==2.9.9
+# psycopg2-binary==2.9.9  # driver PostgreSQL — descomente ao usar Postgres (produção/Docker). No dev local com SQLite não é necessário.
 redis==5.0.4
 celery==5.3.6
 django-redis==5.4.0
@@ -10,3 +10,5 @@ django-filter==24.2
 django-cors-headers==4.3.1
 openpyxl==3.1.2
 gunicorn==21.2.0
+pytest==8.2.0
+pytest-django==4.8.0

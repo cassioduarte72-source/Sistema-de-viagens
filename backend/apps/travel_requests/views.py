@@ -25,10 +25,14 @@ from .serializers import (
     DestinationSerializer,
 )
 from .filters import TravelRequestFilter
+from .sagu_actions import (
+    TravelRequestSaguActionsMixin, WizardActionsMixin,
+    FINANCE_ROLES, SAGU_STATUS_LABELS,
+)
 from .permissions import TravelRequestPermission
 
 
-class TravelRequestViewSet(viewsets.ModelViewSet):
+class TravelRequestViewSet(TravelRequestSaguActionsMixin, WizardActionsMixin, viewsets.ModelViewSet):
     """
     CRUD completo de solicitações de viagem com controle de acesso por objeto.
 
@@ -250,3 +254,120 @@ class DestinationViewSet(viewsets.ReadOnlyModelViewSet):
     filter_backends = [filters.SearchFilter]
     search_fields = ['city', 'state', 'country']
     pagination_class = None  # Retorna todos para uso em autocomplete
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Endpoints de paridade SAGU
+# ═══════════════════════════════════════════════════════════════════════════
+from .models import (
+    TravelBeneficiary, BudgetAllocation, ResearchProject, FundingAgency,
+)
+from .serializers import (
+    TravelBeneficiarySerializer, BudgetAllocationSerializer,
+    ResearchProjectSerializer, FundingAgencySerializer, StatusChangeSerializer,
+)
+
+class TravelBeneficiaryViewSet(viewsets.ModelViewSet):
+    """Favorecidos da viagem (bloco 'Favorecidos' do SAGU)."""
+    serializer_class = TravelBeneficiarySerializer
+    permission_classes = [IsAuthenticated]
+    filterset_fields = ['travel_request', 'beneficiary_type']
+
+    def get_queryset(self):
+        profile = self.request.user.profile
+        qs = TravelBeneficiary.objects.select_related(
+            'travel_request', 'profile', 'budget',
+        )
+        if profile.profile_role in FINANCE_ROLES or profile.is_approver:
+            return qs
+        return qs.filter(travel_request__requester=profile)
+
+    def perform_create(self, serializer):
+        travel = serializer.validated_data['travel_request']
+        profile = self.request.user.profile
+        is_owner = travel.requester_id == profile.id
+        if not (is_owner or profile.profile_role in FINANCE_ROLES):
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied('Apenas o solicitante ou o SOF podem incluir favorecidos.')
+        if not travel.can_be_edited and profile.profile_role not in FINANCE_ROLES:
+            from rest_framework.exceptions import ValidationError
+            raise ValidationError('Favorecidos só podem ser incluídos com a viagem em rascunho.')
+        serializer.save()
+
+
+class BudgetAllocationViewSet(viewsets.ModelViewSet):
+    """Bloco financeiro por favorecido — escrita restrita ao SOF."""
+    serializer_class = BudgetAllocationSerializer
+    permission_classes = [IsAuthenticated]
+    filterset_fields = ['beneficiary']
+
+    def get_queryset(self):
+        return BudgetAllocation.objects.select_related(
+            'beneficiary', 'beneficiary__travel_request',
+        )
+
+    def _check_finance(self):
+        if self.request.user.profile.profile_role not in FINANCE_ROLES:
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied('Apenas o setor financeiro registra dados orçamentários.')
+
+    def perform_create(self, serializer):
+        self._check_finance()
+        serializer.save()
+
+    def perform_update(self, serializer):
+        self._check_finance()
+        serializer.save()
+
+
+class ResearchProjectViewSet(viewsets.ModelViewSet):
+    queryset = ResearchProject.objects.select_related('funding_agency')
+    serializer_class = ResearchProjectSerializer
+    permission_classes = [IsAuthenticated]
+    filterset_fields = ['active', 'funding_agency']
+    search_fields = ['number', 'name', 'responsible']
+
+
+class FundingAgencyViewSet(viewsets.ModelViewSet):
+    queryset = FundingAgency.objects.all()
+    serializer_class = FundingAgencySerializer
+    permission_classes = [IsAuthenticated]
+    filterset_fields = ['active']
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Wizard do solicitante ('Minhas Viagens' / 'Solicitar Viagem' do SAGU)
+# ═══════════════════════════════════════════════════════════════════════════
+from core.models import SystemConfig
+from .models import Sponsor, ResourceLine, FlightTicket
+from .serializers import (
+    SponsorSerializer, ResourceLineSerializer, FlightTicketSerializer,
+)
+
+
+class SponsorViewSet(viewsets.ModelViewSet):
+    queryset = Sponsor.objects.all()
+    serializer_class = SponsorSerializer
+    permission_classes = [IsAuthenticated]
+    filterset_fields = ['active']
+
+
+class ResourceLineViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = ResourceLine.objects.filter(active=True)
+    serializer_class = ResourceLineSerializer
+    permission_classes = [IsAuthenticated]
+    pagination_class = None
+
+
+class FlightTicketViewSet(viewsets.ModelViewSet):
+    """Seção 'Passagens' da viagem aérea (separada das diárias)."""
+    serializer_class = FlightTicketSerializer
+    permission_classes = [IsAuthenticated]
+    filterset_fields = ['travel_request', 'beneficiary']
+
+    def get_queryset(self):
+        profile = self.request.user.profile
+        qs = FlightTicket.objects.select_related('travel_request', 'beneficiary')
+        if profile.profile_role in FINANCE_ROLES or profile.is_approver:
+            return qs
+        return qs.filter(travel_request__requester=profile)

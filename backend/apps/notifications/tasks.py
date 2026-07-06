@@ -143,3 +143,35 @@ def notify_pending_accountability():
 
     logger.info(f'Notificações de PC pendente enviadas: {count}')
     return count
+
+
+@shared_task(bind=True, max_retries=3, default_retry_delay=60)
+def notify_status_changed(self, travel_request_id: str, new_status: str, observation: str = ''):
+    """
+    E-mail opcional da tela 'Alterar Status' (botão 'Salvar e Enviar E-mail' do SAGU):
+    informa ao solicitante a mudança de situação da viagem, com a observação.
+    """
+    try:
+        from apps.travel_requests.models import TravelRequest
+        from apps.travel_requests.views import SAGU_STATUS_LABELS
+        travel = TravelRequest.objects.select_related('requester', 'destination').get(
+            id=travel_request_id
+        )
+        label = SAGU_STATUS_LABELS.get(new_status, new_status)
+        obs = f'\n\nObservação: {observation}' if observation else ''
+        send_mail(
+            subject=f'[SAV Embrapa] Viagem {travel.request_number} — situação: {label}',
+            message=(
+                f'Prezado(a) {travel.requester.full_name},\n\n'
+                f'A situação da sua viagem {travel.request_number} para {travel.destination} '
+                f'foi alterada para: {label}.{obs}\n\n'
+                f'Acesse o SAV: {settings.FRONTEND_URL}/travel-requests/{travel.id}\n\n'
+                f'Atenciosamente,\nSistema de Autorização de Viagens — Embrapa'
+            ),
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[travel.requester.email],
+            fail_silently=False,
+        )
+    except Exception as exc:
+        logger.error(f'Erro ao notificar mudança de status: {exc}', exc_info=True)
+        raise self.retry(exc=exc)

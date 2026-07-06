@@ -1,0 +1,192 @@
+[
+  {
+    "model": "core.systemconfig",
+    "pk": "11111111-1111-1111-1111-111111111101",
+    "fields": {
+      "config_key": "DAILY_RATE_NATIONAL",
+      "config_value": "756.02",
+      "description": "Diária nacional padrão (R$)",
+      "created_at": "2026-01-01T00:00:00Z",
+      "updated_at": "2026-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "core.systemconfig",
+    "pk": "11111111-1111-1111-1111-111111111102",
+    "fields": {
+      "config_key": "DAILY_RATE_INTERNATIONAL",
+      "config_value": "1200.00",
+      "description": "Diária internacional padrão (R$)",
+      "created_at": "2026-01-01T00:00:00Z",
+      "updated_at": "2026-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "core.systemconfig",
+    "pk": "11111111-1111-1111-1111-111111111103",
+    "fields": {
+      "config_key": "DAILY_RATE_HALF",
+      "config_value": "378.01",
+      "description": "Meia diária nacional (R$)",
+      "created_at": "2026-01-01T00:00:00Z",
+      "updated_at": "2026-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "core.systemconfig",
+    "pk": "11111111-1111-1111-1111-111111111104",
+    "fields": {
+      "config_key": "MIN_ADVANCE_DAYS",
+      "config_value": "3",
+      "description": "Antecedência mínima da solicitação (dias)",
+      "created_at": "2026-01-01T00:00:00Z",
+      "updated_at": "2026-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "travel_requests.destination",
+    "pk": "22222222-2222-2222-2222-222222222201",
+    "fields": {
+      "city": "Brasília",
+      "state": "DF",
+      "country": "Brasil",
+      "is_international": false,
+      "daily_rate_override": null,
+      "created_at": "2026-01-01T00:00:00Z",
+      "updated_at": "2026-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "travel_requests.destination",
+    "pk": "22222222-2222-2222-2222-222222222202",
+    "fields": {
+      "city": "Salvador",
+      "state": "BA",
+      "country": "Brasil",
+      "is_international": false,
+      "daily_rate_override": null,
+      "created_at": "2026-01-01T00:00:00Z",
+      "updated_at": "2026-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "travel_requests.destination",
+    "pk": "22222222-2222-2222-2222-222222222203",
+    "fields": {
+      "city": "São Paulo",
+      "state": "SP",
+      "country": "Brasil",
+      "is_international": false,
+      "daily_rate_override": null,
+      "created_at": "2026-01-01T00:00:00Z",
+      "updated_at": "2026-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "travel_requests.destination",
+    "pk": "22222222-2222-2222-2222-222222222204",
+    "fields": {
+      "city": "Rio de Janeiro",
+      "state": "RJ",
+      "country": "Brasil",
+      "is_international": false,
+      "daily_rate_override": null,
+      "created_at": "2026-01-01T00:00:00Z",
+      "updated_at": "2026-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "travel_requests.destination",
+    "pk": "22222222-2222-2222-2222-222222222205",
+    "fields": {
+      "city": "Fortaleza",
+      "state": "CE",
+      "country": "Brasil",
+      "is_international": false,
+      "daily_rate_override": null,
+      "created_at": "2026-01-01T00:00:00Z",
+      "updated_at": "2026-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "core.systemconfig",
+    "pk": "11111111-1111-1111-1111-111111111105",
+    "fields": {
+      "config_key": "EXCEPTIONALITY_ADVANCE_DAYS",
+      "config_value": "17",
+      "description": "Antecedência mínima de viagem aérea sem justificativa (dias)",
+      "created_at": "2026-01-01T00:00:00Z",
+      "updated_at": "2026-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "travel_requests.resourceline",
+    "pk": "33333333-3333-3333-3333-333333333301",
+    "fields": {
+      "name": "Despesas Fixas",
+      "active": true,
+      "created_at": "2026-01-01T00:00:00Z",
+      "updated_at": "2026-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "travel_requests.resourceline",
+    "pk": "33333333-3333-3333-3333-333333333302",
+    "fields": {
+      "name": "Tributos",
+      "active": true,
+      "created_at": "2026-01-01T00:00:00Z",
+      "updated_at": "2026-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "travel_requests.resourceline",
+    "pk": "33333333-3333-3333-3333-333333333303",
+    "fields": {
+      "name": "Eventos",
+      "active": true,
+      "created_at": "2026-01-01T00:00:00Z",
+      "updated_at": "2026-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "travel_requests.resourceline",
+    "pk": "33333333-3333-3333-3333-333333333304",
+    "fields": {
+      "name": "Reserva",
+      "active": true,
+      "created_at": "2026-01-01T00:00:00Z",
+      "updated_at": "2026-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "travel_requests.resourceline",
+    "pk": "33333333-3333-3333-3333-333333333305",
+    "fields": {
+      "name": "Investimentos",
+      "active": true,
+      "created_at": "2026-01-01T00:00:00Z",
+      "updated_at": "2026-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "travel_requests.resourceline",
+    "pk": "33333333-3333-3333-3333-333333333306",
+    "fields": {
+      "name": "Sentenças Judiciais",
+      "active": true,
+      "created_at": "2026-01-01T00:00:00Z",
+      "updated_at": "2026-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "travel_requests.resourceline",
+    "pk": "33333333-3333-3333-3333-333333333307",
+    "fields": {
+      "name": "Restos a Pagar",
+      "active": true,
+      "created_at": "2026-01-01T00:00:00Z",
+      "updated_at": "2026-01-01T00:00:00Z"
+    }
+  }
+]

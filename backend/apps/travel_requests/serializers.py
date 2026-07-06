@@ -44,12 +44,27 @@ class TravelRequestDetailSerializer(serializers.ModelSerializer):
     total_days = serializers.IntegerField(read_only=True)
     status_display = serializers.CharField(source='get_status_display', read_only=True)
     can_be_edited = serializers.BooleanField(read_only=True)
+    beneficiaries = serializers.SerializerMethodField()
+    total_beneficiaries_value = serializers.DecimalField(
+        max_digits=12, decimal_places=2, read_only=True,
+    )
+    project_detail = serializers.SerializerMethodField()
+
+    def get_beneficiaries(self, obj):
+        return TravelBeneficiarySerializer(obj.beneficiaries.all(), many=True).data
+
+    def get_project_detail(self, obj):
+        if obj.project_id:
+            return ResearchProjectSerializer(obj.project).data
+        return None
 
     class Meta:
         model = TravelRequest
         fields = '__all__'
         read_only_fields = [
             'id', 'request_number', 'status', 'submitted_at',
+            'employee_type',  # desnormalizado do perfil do solicitante no create()
+            'estimated_daily_total',  # calculado no backend, nunca aceito do cliente
             'created_at', 'updated_at',
         ]
 
@@ -82,12 +97,33 @@ class TravelRequestDetailSerializer(serializers.ModelSerializer):
                     {'departure_date': f'A viagem deve ser solicitada com pelo menos {min_advance} dias de antecedência.'}
                 )
 
-        # Regra 3: fonte de recursos obrigatória quando sem ônus Embrapa
-        if cost_type == TravelRequest.CostType.NO_EMBRAPA_COST:
+        # Regra 3: campos condicionais por fonte de custeio (passo 1 do wizard)
+        if cost_type == TravelRequest.CostType.NO_EMBRAPA_COST:  # legado
             if not data.get('funding_source'):
                 raise serializers.ValidationError(
                     {'funding_source': 'Informe a fonte de recursos para viagens sem ônus Embrapa.'}
                 )
+        if cost_type == TravelRequest.CostType.EXTERNAL_PROJECT and not data.get('project'):
+            raise serializers.ValidationError(
+                {'project': 'Selecione o projeto externo que custeará a viagem.'}
+            )
+        if cost_type == TravelRequest.CostType.SPONSOR and not data.get('sponsor'):
+            raise serializers.ValidationError(
+                {'sponsor': 'Selecione o patrocinador que custeará a viagem.'}
+            )
+
+        # Regra 5: justificativa de excepcionalidade para viagem aérea
+        # solicitada com menos de N dias de antecedência (padrão SAGU: 17)
+        if data.get('trip_type') == TravelRequest.TripType.AIR and departure:
+            exc_days = int(SystemConfig.get_value('EXCEPTIONALITY_ADVANCE_DAYS', '17'))
+            if (departure - date.today()).days < exc_days:
+                if not (data.get('exceptionality_justification') or '').strip():
+                    raise serializers.ValidationError({
+                        'exceptionality_justification': (
+                            f'Viagem aérea com menos de {exc_days} dias de antecedência '
+                            f'exige justificativa de excepcionalidade.'
+                        )
+                    })
 
         # Regra 4: quantidade de diárias obrigatória se solicitadas
         if needs_daily and not daily_qty:
@@ -167,4 +203,116 @@ class TravelAuthorizationSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError(
                     {'justification': 'Justificativa é obrigatória ao rejeitar uma solicitação.'}
                 )
+        return data
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Serializers de paridade SAGU
+# ═══════════════════════════════════════════════════════════════════════════
+import re
+from .models import (
+    TravelBeneficiary, BudgetAllocation, ResearchProject,
+    FundingAgency, StatusChange,
+)
+
+SEI_PATTERN = re.compile(r'^\d{5}\.\d{6}/\d{4}-\d{2}$')
+
+
+class FundingAgencySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = FundingAgency
+        fields = '__all__'
+
+
+class ResearchProjectSerializer(serializers.ModelSerializer):
+    funding_agency_label = serializers.CharField(
+        source='funding_agency.__str__', read_only=True,
+    )
+
+    class Meta:
+        model = ResearchProject
+        fields = '__all__'
+
+
+class BudgetAllocationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = BudgetAllocation
+        fields = '__all__'
+
+
+class TravelBeneficiarySerializer(serializers.ModelSerializer):
+    total_value = serializers.DecimalField(
+        max_digits=12, decimal_places=2, read_only=True,
+    )
+    budget = BudgetAllocationSerializer(read_only=True)
+
+    class Meta:
+        model = TravelBeneficiary
+        fields = '__all__'
+
+    def validate_sei_process(self, value):
+        if value and not SEI_PATTERN.match(value):
+            raise serializers.ValidationError(
+                'Formato inválido. Use NNNNN.NNNNNN/NNNN-NN (ex.: 21158.000123/2026-45).'
+            )
+        return value
+
+    def validate_daily_quantity(self, value):
+        from decimal import Decimal
+        if value and value % Decimal('0.5') != 0:
+            raise serializers.ValidationError(
+                'Diárias devem ser em quantidades inteiras ou meias (ex.: 1, 1.5, 3.5).'
+            )
+        return value
+
+    def validate(self, data):
+        start, end = data.get('start_date'), data.get('end_date')
+        if start and end and end < start:
+            raise serializers.ValidationError(
+                {'end_date': 'Fim do período deve ser igual ou posterior ao início.'}
+            )
+        return data
+
+
+class StatusChangeSerializer(serializers.ModelSerializer):
+    changed_by_name = serializers.CharField(
+        source='changed_by.full_name', read_only=True,
+    )
+
+    class Meta:
+        model = StatusChange
+        fields = '__all__'
+        read_only_fields = ['id', 'from_status', 'email_sent', 'created_at']
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Serializers do wizard (portal do solicitante)
+# ═══════════════════════════════════════════════════════════════════════════
+from .models import Sponsor, ResourceLine, FlightTicket
+
+
+class SponsorSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Sponsor
+        fields = '__all__'
+
+
+class ResourceLineSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ResourceLine
+        fields = '__all__'
+
+
+class FlightTicketSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = FlightTicket
+        fields = '__all__'
+
+    def validate(self, data):
+        beneficiary = data.get('beneficiary')
+        travel = data.get('travel_request')
+        if beneficiary and travel and beneficiary.travel_request_id != travel.id:
+            raise serializers.ValidationError(
+                {'beneficiary': 'O favorecido não pertence a esta viagem.'}
+            )
         return data
