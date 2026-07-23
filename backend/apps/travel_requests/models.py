@@ -73,7 +73,8 @@ class TravelRequest(BaseModel):
     class CostType(models.TextChoices):
         # Passo 1 do wizard (fonte de recurso) — paridade SAGU
         NO_COST_LOCAL = 'NO_COST_LOCAL', 'Sem custo — dentro do município'
-        EMBRAPA_COST = 'EMBRAPA_COST', 'Com ônus da Embrapa'
+        EMBRAPA_COST = 'EMBRAPA_COST', 'Com Ônus para Embrapa'
+        NO_ONUS = 'NO_ONUS', 'Sem Ônus para Embrapa'
         EXTERNAL_PROJECT = 'EXTERNAL_PROJECT', 'Sem ônus da Embrapa — projeto externo'
         SPONSOR = 'SPONSOR', 'Sem ônus da Embrapa — patrocinador'
         # Legado (compatibilidade com registros antigos)
@@ -135,9 +136,27 @@ class TravelRequest(BaseModel):
     employee_type = models.CharField(max_length=20, choices=EmployeeType.choices, verbose_name='Tipo de Vínculo')
     cost_type = models.CharField(max_length=20, choices=CostType.choices, default=CostType.EMBRAPA_COST, verbose_name='Tipo de Ônus')
 
+    class TransportMeans(models.TextChoices):
+        AIR = 'AIR', 'Aéreo'
+        AIR_ROAD = 'AIR_ROAD', 'Aéreo/Rodoviário'
+        RIVER = 'RIVER', 'Fluvial'
+        RIVER_ROAD = 'RIVER_ROAD', 'Fluvial/Rodoviário'
+        ROAD = 'ROAD', 'Rodoviário'
+
+    # Meio de transporte (campo "Meio de Transporte" do SDP)
+    transport_means = models.CharField(
+        max_length=20, choices=TransportMeans.choices, blank=True,
+        verbose_name='Meio de Transporte',
+    )
+
     # Dados da viagem
     origin_city = models.CharField(max_length=100, verbose_name='Cidade de Origem')
     origin_state = models.CharField(max_length=2, blank=True, verbose_name='UF de Origem')
+    itinerary = models.CharField(
+        max_length=255, blank=True, verbose_name='Roteiro',
+        help_text='Ex.: Cruz das Almas - Salvador - Brasília',
+    )
+    observations = models.TextField(blank=True, verbose_name='Observações')
     destination = models.ForeignKey(
         Destination,
         null=True,
@@ -169,6 +188,11 @@ class TravelRequest(BaseModel):
         'ResourceLine', null=True, blank=True,
         on_delete=models.PROTECT, related_name='travel_requests',
         verbose_name='Linha de Recurso',
+    )
+    research_activity = models.ForeignKey(
+        'ResearchActivity', null=True, blank=True,
+        on_delete=models.PROTECT, related_name='travel_requests',
+        verbose_name='Atividade (Fonte de Recurso)',
     )
     sponsor = models.ForeignKey(
         'Sponsor', null=True, blank=True,
@@ -205,6 +229,14 @@ class TravelRequest(BaseModel):
     # Status do fluxo
     status = models.CharField(max_length=20, choices=StatusChoices.choices, default=StatusChoices.DRAFT, verbose_name='Status')
     submitted_at = models.DateTimeField(null=True, blank=True, verbose_name='Submetida em')
+    # Número do processo SEI informado pelo SLT (NNNNN.NNNNNN/AAAA-NN)
+    sei_process = models.CharField(max_length=25, blank=True, verbose_name='Processo SEI')
+    # Empenho e valor informados pelo SOF (empenho: AAAANE + 6 dígitos, ex.: 2026NE000121)
+    commitment_number = models.CharField(max_length=20, blank=True, verbose_name='Nota de Empenho')
+    committed_value = models.DecimalField(
+        max_digits=12, decimal_places=2, null=True, blank=True,
+        verbose_name='Valor Empenhado (R$)',
+    )
 
     objects = TravelRequestManager()
 
@@ -282,8 +314,10 @@ class TravelRequest(BaseModel):
     #     Não atendida, Cancelada, Finalizada) ─────────────────────────────────
     ALLOWED_TRANSITIONS = {
         'DRAFT': ['SUBMITTED', 'CANCELLED'],
-        'SUBMITTED': ['UNDER_REVIEW', 'APPROVED', 'REJECTED', 'CANCELLED'],
-        'UNDER_REVIEW': ['APPROVED', 'REJECTED', 'CANCELLED'],
+        # Fluxo atual (SAV como módulo do SAGU): vai direto ao SLT, que ao
+        # lançar no SDP marca como Finalizada (SUBMITTED → COMPLETED).
+        'SUBMITTED': ['UNDER_REVIEW', 'APPROVED', 'REJECTED', 'CANCELLED', 'COMPLETED'],
+        'UNDER_REVIEW': ['APPROVED', 'REJECTED', 'CANCELLED', 'COMPLETED'],
         'APPROVED': ['COMPLETED', 'CANCELLED'],
         'REJECTED': [],
         'CANCELLED': [],
@@ -456,6 +490,38 @@ class ResearchProject(BaseModel):
         return f'{self.number} — {self.name}'
 
 
+class ResearchActivity(BaseModel):
+    """
+    Atividade de pesquisa / Plano de Ação (tela 'Atividades' do SAGU):
+    número, título, responsável, vigência (início/término) e saldo disponível.
+    Quando a viagem é 'Com Ônus', o solicitante escolhe uma de suas atividades
+    (aquelas em que é o responsável) como fonte de recurso.
+    """
+    code = models.CharField(max_length=40, unique=True, verbose_name='Número (Plano de Ação)')
+    description = models.CharField(max_length=500, verbose_name='Título da Atividade')
+    responsible = models.CharField(max_length=200, blank=True, verbose_name='Responsável')
+    start_date = models.DateField(null=True, blank=True, verbose_name='Início')
+    end_date = models.DateField(null=True, blank=True, verbose_name='Término')
+    balance = models.DecimalField(
+        max_digits=14, decimal_places=2, null=True, blank=True,
+        verbose_name='Saldo (R$)',
+    )
+    active = models.BooleanField(default=True, verbose_name='Ativa')
+
+    class Meta:
+        db_table = 'research_activities'
+        verbose_name = 'Atividade de Pesquisa'
+        verbose_name_plural = 'Atividades de Pesquisa'
+        ordering = ['code']
+        indexes = [
+            models.Index(fields=['code']),
+            models.Index(fields=['responsible']),
+        ]
+
+    def __str__(self):
+        return f'{self.code} — {self.description[:60]}'
+
+
 class TravelBeneficiary(BaseModel):
     """
     Favorecido de uma viagem (bloco 'Favorecidos' do SAGU).
@@ -485,6 +551,13 @@ class TravelBeneficiary(BaseModel):
         verbose_name='Perfil (interno)',
     )
     full_name = models.CharField(max_length=200, verbose_name='Nome Completo')
+    # Dados do favorecido copiados do cadastro (SAGU) no momento da solicitação —
+    # preservam o documento (AV/PCV) mesmo se o cadastro mudar depois.
+    registration_number = models.CharField(max_length=30, blank=True, verbose_name='Matrícula')
+    cpf = models.CharField(max_length=14, blank=True, verbose_name='CPF')
+    email = models.EmailField(blank=True, verbose_name='E-mail')
+    position = models.CharField(max_length=120, blank=True, verbose_name='Cargo')
+    bank_info = models.CharField(max_length=120, blank=True, verbose_name='Dados Bancários')
 
     start_date = models.DateField(verbose_name='Início do Período')
     end_date = models.DateField(verbose_name='Fim do Período')
@@ -664,3 +737,32 @@ class FlightTicket(BaseModel):
 
     def __str__(self):
         return f'{self.origin} → {self.destination} ({self.travel_request.request_number})'
+
+
+class TravelAdvance(BaseModel):
+    """Bloco 'Outros Adiantamentos' do SDP: natureza, valor e justificativa."""
+
+    class Nature(models.TextChoices):
+        PROVEN_EXPENSES = 'PROVEN_EXPENSES', 'Despesas comprovadas'
+        LODGING = 'LODGING', 'Hospedagem'
+        URBAN_TRANSPORT = 'URBAN_TRANSPORT', 'Deslocamento urbano'
+        SERVICES = 'SERVICES', 'Serviços'
+        EVENT_FEE = 'EVENT_FEE', 'Serviços - Taxa de inscrição em eventos'
+
+    travel_request = models.ForeignKey(
+        TravelRequest, on_delete=models.CASCADE,
+        related_name='advances', verbose_name='Viagem',
+    )
+    nature = models.CharField(max_length=20, choices=Nature.choices, verbose_name='Natureza')
+    value = models.DecimalField(
+        max_digits=12, decimal_places=2, default=0, verbose_name='Valor (R$)',
+    )
+    justification = models.TextField(blank=True, verbose_name='Justificativa')
+
+    class Meta:
+        db_table = 'travel_advances'
+        verbose_name = 'Outro Adiantamento'
+        verbose_name_plural = 'Outros Adiantamentos'
+
+    def __str__(self):
+        return f'{self.get_nature_display()} — {self.value}'

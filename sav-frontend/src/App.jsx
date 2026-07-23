@@ -6,8 +6,12 @@ import { useEffect, useState } from 'react';
 import { api } from './api';
 import Login from './components/Login';
 import MinhasViagens from './components/MinhasViagens';
-import Wizard from './components/Wizard';
+import SolicitacaoViagem from './components/SolicitacaoViagem';
 import TripDetail from './components/TripDetail';
+import CaixaSLT from './components/CaixaSLT';
+import CaixaSOF from './components/CaixaSOF';
+import PrestacaoContas from './components/PrestacaoContas';
+import AnalisePCV from './components/AnalisePCV';
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -15,13 +19,21 @@ export default function App() {
   const [view, setView] = useState({ name: 'mine' });
   const [toast, setToast] = useState('');
 
+  // Página inicial conforme o papel: SLT → Caixa SLT; SOF → Caixa SOF; demais → Minhas viagens
+  const telaInicial = (u) => {
+    if (u?.profile_role === 'SIL') return { name: 'slt' };
+    if (u?.profile_role === 'FINANCE') return { name: 'sof' };
+    return { name: 'mine' };
+  };
+  function entrar(u) { setUser(u); setView(telaInicial(u)); }
+
   useEffect(() => {
     if (!api.hasSession()) return;
-    api.me().then(setUser).catch(() => api.logout()).finally(() => setChecking(false));
-  }, []);
+    api.me().then(entrar).catch(() => api.logout()).finally(() => setChecking(false));
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (checking) return null;
-  if (!user) return <Login onLogin={setUser} />;
+  if (!user) return <Login onLogin={entrar} />;
 
   function logout() { api.logout(); setUser(null); setView({ name: 'mine' }); }
   function flash(msg) { setToast(msg); setTimeout(() => setToast(''), 4000); }
@@ -35,6 +47,20 @@ export default function App() {
             onClick={() => setView({ name: 'mine' })}>Minhas viagens</button>
           <button className={`navlink ${view.name === 'wizard' ? 'active' : ''}`}
             onClick={() => setView({ name: 'wizard' })}>Solicitar viagem</button>
+          <button className={`navlink ${view.name === 'pcv' ? 'active' : ''}`}
+            onClick={() => setView({ name: 'pcv' })}>Prestação de contas</button>
+          {(user.profile_role === 'SIL' || user.profile_role === 'ADMIN') && (
+            <button className={`navlink ${view.name === 'slt' ? 'active' : ''}`}
+              onClick={() => setView({ name: 'slt' })}>Caixa do SLT</button>
+          )}
+          {(user.profile_role === 'FINANCE' || user.profile_role === 'ADMIN') && (
+            <button className={`navlink ${view.name === 'sof' ? 'active' : ''}`}
+              onClick={() => setView({ name: 'sof' })}>Caixa do SOF</button>
+          )}
+          {(user.profile_role === 'FINANCE' || user.profile_role === 'ADMIN') && (
+            <button className={`navlink ${view.name === 'analise-pcv' ? 'active' : ''}`}
+              onClick={() => setView({ name: 'analise-pcv' })}>Análise de PCV</button>
+          )}
         </nav>
         <div className="spacer" />
         <div className="userbox">
@@ -55,18 +81,28 @@ export default function App() {
           />
         )}
         {view.name === 'wizard' && (
-          <Wizard
+          <SolicitacaoViagem
+            user={user}
             onCancel={() => setView({ name: 'mine' })}
             onDone={(id, submitted) => {
               flash(submitted
-                ? 'Viagem enviada para aprovação. Você será avisado por e-mail.'
-                : 'Rascunho salvo. Envie quando estiver pronto.');
+                ? 'Solicitação encaminhada ao SLT para lançamento no SDP.'
+                : 'Rascunho salvo. Encaminhe quando estiver pronto.');
               setView({ name: 'detail', id });
             }}
           />
         )}
+        {view.name === 'slt' && (
+          <CaixaSLT onOpen={(id) => setView({ name: 'detail', id, from: 'slt' })} />
+        )}
+        {view.name === 'sof' && (
+          <CaixaSOF onOpen={(id) => setView({ name: 'detail', id, from: 'sof' })} />
+        )}
+        {view.name === 'pcv' && <PrestacaoContas />}
+        {view.name === 'analise-pcv' && <AnalisePCV />}
         {view.name === 'detail' && (
-          <TripDetail tripId={view.id} onBack={() => setView({ name: 'mine' })} />
+          <TripDetail tripId={view.id} user={user}
+            onBack={() => setView({ name: ['slt', 'sof'].includes(view.from) ? view.from : 'mine' })} />
         )}
       </main>
     </div>

@@ -7,8 +7,9 @@ Usuários só acessam suas próprias solicitações (exceto papéis autorizados)
 
 import hashlib
 from datetime import datetime
+from django.db.models import Q
 from rest_framework import viewsets, status, filters
-from rest_framework.decorators import action
+from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django_filters.rest_framework import DjangoFilterBackend
@@ -17,12 +18,13 @@ from django.db import transaction
 
 from core.audit import log_audit
 from apps.notifications.tasks import notify_approval_required, notify_decision_made
-from .models import TravelRequest, TravelAuthorization, Destination
+from .models import TravelRequest, TravelAuthorization, Destination, ResearchActivity
 from .serializers import (
     TravelRequestListSerializer,
     TravelRequestDetailSerializer,
     TravelAuthorizationSerializer,
     DestinationSerializer,
+    ResearchActivitySerializer,
 )
 from .filters import TravelRequestFilter
 from .sagu_actions import (
@@ -30,6 +32,24 @@ from .sagu_actions import (
     FINANCE_ROLES, SAGU_STATUS_LABELS,
 )
 from .permissions import TravelRequestPermission
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def research_activities_search(request):
+    """
+    Busca de atividades de pesquisa / Plano de Ação por código ou descrição.
+    Usado pelos campos 'Plano de Ação' / 'Objetivos da Viagem'. Mín. 2 caracteres.
+    """
+    q = request.query_params.get('q', '').strip()
+    responsavel = request.query_params.get('responsavel', '').strip()
+    qs = ResearchActivity.objects.filter(active=True)
+    if responsavel:
+        # Atividades no nome do responsável (ex.: as do solicitante, quando Com Ônus)
+        qs = qs.filter(responsible__icontains=responsavel)
+    if len(q) >= 2:
+        qs = qs.filter(Q(code__icontains=q) | Q(description__icontains=q))
+    return Response(ResearchActivitySerializer(qs[:50], many=True).data)
 
 
 class TravelRequestViewSet(TravelRequestSaguActionsMixin, WizardActionsMixin, viewsets.ModelViewSet):
@@ -53,8 +73,8 @@ class TravelRequestViewSet(TravelRequestSaguActionsMixin, WizardActionsMixin, vi
         user_profile = self.request.user.profile
         role = user_profile.profile_role
 
-        if role in ['TRAVEL_ANALYST', 'FINANCE', 'ADMIN']:
-            # Acesso total
+        if role in ['TRAVEL_ANALYST', 'FINANCE', 'ADMIN', 'SIL']:
+            # Acesso total (SIL/SLT precisa ver as solicitações encaminhadas)
             return TravelRequest.objects.select_related(
                 'requester', 'destination'
             ).all()
@@ -67,10 +87,14 @@ class TravelRequestViewSet(TravelRequestSaguActionsMixin, WizardActionsMixin, vi
                 requester__in=[user_profile.id, *subordinate_ids]
             )
         else:
-            # REQUESTER: apenas suas próprias
+            # Empregado geral: só as viagens em que participa —
+            # solicitadas POR ele (requester) ou PARA ele (favorecido, por nome)
             return TravelRequest.objects.select_related(
                 'requester', 'destination'
-            ).filter(requester=user_profile)
+            ).filter(
+                Q(requester=user_profile)
+                | Q(beneficiaries__full_name=user_profile.full_name)
+            ).distinct()
 
     def get_serializer_class(self):
         if self.action == 'list':
@@ -102,6 +126,14 @@ class TravelRequestViewSet(TravelRequestSaguActionsMixin, WizardActionsMixin, vi
                 authorization_level=1,
                 decision=TravelAuthorization.DecisionChoices.PENDING,
             )
+
+            # Fluxo direto ao SLT: as requisições de veículo (Solicitadas)
+            # acompanham a viagem e ficam disponíveis para o SLT reservar.
+            from apps.fleet.models import VehicleRequisition
+            for req in travel_request.vehicle_requisitions.filter(
+                status=VehicleRequisition.Status.REQUESTED
+            ):
+                req.send_to_slt()
 
         # Notifica supervisor de forma assíncrona (não bloqueia a resposta)
         if travel_request.requester.supervisor:
@@ -339,9 +371,10 @@ class FundingAgencyViewSet(viewsets.ModelViewSet):
 # Wizard do solicitante ('Minhas Viagens' / 'Solicitar Viagem' do SAGU)
 # ═══════════════════════════════════════════════════════════════════════════
 from core.models import SystemConfig
-from .models import Sponsor, ResourceLine, FlightTicket
+from .models import Sponsor, ResourceLine, FlightTicket, TravelAdvance
 from .serializers import (
     SponsorSerializer, ResourceLineSerializer, FlightTicketSerializer,
+    TravelAdvanceSerializer,
 )
 
 
@@ -368,6 +401,20 @@ class FlightTicketViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         profile = self.request.user.profile
         qs = FlightTicket.objects.select_related('travel_request', 'beneficiary')
+        if profile.profile_role in FINANCE_ROLES or profile.is_approver:
+            return qs
+        return qs.filter(travel_request__requester=profile)
+
+
+class AdvanceViewSet(viewsets.ModelViewSet):
+    """Bloco 'Outros Adiantamentos' da viagem (natureza, valor, justificativa)."""
+    serializer_class = TravelAdvanceSerializer
+    permission_classes = [IsAuthenticated]
+    filterset_fields = ['travel_request', 'nature']
+
+    def get_queryset(self):
+        profile = self.request.user.profile
+        qs = TravelAdvance.objects.select_related('travel_request')
         if profile.profile_role in FINANCE_ROLES or profile.is_approver:
             return qs
         return qs.filter(travel_request__requester=profile)

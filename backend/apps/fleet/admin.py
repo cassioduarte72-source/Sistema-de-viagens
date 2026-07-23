@@ -1,5 +1,7 @@
 from django.contrib import admin
-from .models import Vehicle, Driver, VehicleAssignment
+from .models import (
+    Vehicle, Driver, VehicleAssignment, VehicleRequisition, VehicleChecklist,
+)
 
 
 @admin.register(Vehicle)
@@ -19,3 +21,18 @@ class DriverAdmin(admin.ModelAdmin):
 @admin.register(VehicleAssignment)
 class VehicleAssignmentAdmin(admin.ModelAdmin):
     list_display = ('travel_request', 'vehicle', 'driver')
+
+
+@admin.register(VehicleRequisition)
+class VehicleRequisitionAdmin(admin.ModelAdmin):
+    list_display = ('number', 'travel_request', 'requester', 'status', 'created_at')
+    list_filter = ('status', 'needs_driver')
+    search_fields = ('number', 'travel_request__request_number', 'requester__full_name')
+    readonly_fields = ('number',)
+
+
+@admin.register(VehicleChecklist)
+class VehicleChecklistAdmin(admin.ModelAdmin):
+    list_display = ('requisition', 'kind', 'km', 'fuel_level', 'inspected_by', 'created_at')
+    list_filter = ('kind',)
+    search_fields = ('requisition__number',)

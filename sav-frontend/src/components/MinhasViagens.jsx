@@ -41,7 +41,7 @@ export default function MinhasViagens({ onNew, onOpen }) {
           <table className="table">
             <thead>
               <tr>
-                <th>Nº</th><th>Modalidade</th><th>Cidade</th><th>UF</th>
+                <th>Nº</th><th>Favorecido</th><th>Roteiro</th><th>Meio</th>
                 <th>Ônus</th><th>Período</th><th>Situação</th><th></th>
               </tr>
             </thead>
@@ -49,9 +49,9 @@ export default function MinhasViagens({ onNew, onOpen }) {
               {rows.map((r) => (
                 <tr key={r.id}>
                   <td className="mono">{r.numero}</td>
-                  <td>{r.nome || '—'}</td>
-                  <td>{r.cidade}</td>
-                  <td>{r.uf}</td>
+                  <td>{r.favorecido || '—'}</td>
+                  <td>{r.roteiro || '—'}</td>
+                  <td>{r.meio || '—'}</td>
                   <td>{r.onus}</td>
                   <td className="mono">{fmt(r.saida)} – {fmt(r.retorno)}</td>
                   <td><span className="status" data-s={r.status}>{r.status}</span></td>

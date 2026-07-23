@@ -3,16 +3,24 @@ apps/travel_requests/sagu_actions.py — Ações de paridade com o SAGU
 aplicadas ao TravelRequestViewSet via mixin: alterar status com observação
 e e-mail opcional, histórico de status e transcrição para digitação no SDP.
 """
+import re
 from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
+SEI_PATTERN = re.compile(r'^\d{5}\.\d{6}/\d{4}-\d{2}$')
+EMPENHO_PATTERN = re.compile(r'^\d{4}NE\d{6}$')  # ex.: 2026NE000121
+
 from rest_framework.permissions import IsAuthenticated
 from core.models import SystemConfig
-from .serializers import StatusChangeSerializer, ResourceLineSerializer
+from .serializers import (
+    StatusChangeSerializer, ResourceLineSerializer, TravelRequestListSerializer,
+)
 from .models import TravelRequest, ResourceLine
 
 FINANCE_ROLES = ('FINANCE', 'TRAVEL_ANALYST', 'ADMIN')
+SLT_ROLES = ('SIL', 'ADMIN')  # SIL = SLT (Logística/Transporte)
+SOF_ROLES = ('FINANCE', 'ADMIN')  # SOF (Setor de Orçamento e Finanças)
 
 # Mapeamento de status SAV ↔ nomenclatura SAGU (para exibição)
 SAGU_STATUS_LABELS = {
@@ -74,6 +82,127 @@ class TravelRequestSaguActionsMixin:
         changes = travel.status_changes.select_related('changed_by')
         return Response(StatusChangeSerializer(changes, many=True).data)
 
+    @action(detail=False, methods=['get'], url_path='slt-inbox')
+    def slt_inbox(self, request):
+        """
+        Caixa de entrada do SLT: solicitações encaminhadas (Solicitada/SUBMITTED)
+        aguardando lançamento no SDP. Restrita ao SLT (SIL) e ADMIN.
+        """
+        if request.user.profile.profile_role not in SLT_ROLES:
+            return Response(
+                {'detail': 'Acesso restrito ao SLT.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        trips = (
+            TravelRequest.objects
+            .filter(status=TravelRequest.StatusChoices.SUBMITTED)
+            .select_related('requester', 'destination')
+            .order_by('-submitted_at')
+        )
+        return Response(TravelRequestListSerializer(trips, many=True).data)
+
+    @action(detail=True, methods=['post'], url_path='informar-sei')
+    def informar_sei(self, request, pk=None):
+        """SLT informa o número do processo SEI (NNNNN.NNNNNN/AAAA-NN)."""
+        if request.user.profile.profile_role not in SLT_ROLES:
+            return Response(
+                {'detail': 'Acesso restrito ao SLT.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        sei = (request.data.get('sei_process') or '').strip()
+        if sei and not SEI_PATTERN.match(sei):
+            return Response(
+                {'sei_process': 'Formato inválido. Use NNNNN.NNNNNN/AAAA-NN (ex.: 21186.001323/2026-15).'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        travel = self.get_object()
+        travel.sei_process = sei
+        travel.save(update_fields=['sei_process', 'updated_at'])
+        # Ao informar o SEI, o pedido segue para o SOF (Em análise)
+        if sei and travel.status == TravelRequest.StatusChoices.SUBMITTED:
+            travel.change_status(
+                TravelRequest.StatusChoices.UNDER_REVIEW,
+                changed_by=request.user.profile,
+                observation='SEI informado; encaminhado ao SOF.',
+            )
+        # E-mail "AV pronta" ao solicitante/envolvidos
+        if sei:
+            from apps.notifications.tasks import notify_av_ready
+            notify_av_ready.delay(str(travel.id))
+        return Response({
+            'sei_process': travel.sei_process, 'status': travel.status,
+            'message': 'Processo SEI salvo; pedido encaminhado ao SOF; e-mail enviado.',
+        })
+
+    @action(detail=False, methods=['get'], url_path='sof-inbox')
+    def sof_inbox(self, request):
+        """Caixa do SOF: pedidos em análise (SEI informado), aguardando empenho."""
+        if request.user.profile.profile_role not in SOF_ROLES:
+            return Response({'detail': 'Acesso restrito ao SOF.'}, status=status.HTTP_403_FORBIDDEN)
+        trips = (
+            TravelRequest.objects
+            .filter(status=TravelRequest.StatusChoices.UNDER_REVIEW)
+            .select_related('requester', 'destination')
+            .order_by('-submitted_at')
+        )
+        return Response(TravelRequestListSerializer(trips, many=True).data)
+
+    @action(detail=True, methods=['post'], url_path='informar-empenho')
+    def informar_empenho(self, request, pk=None):
+        """SOF informa a Nota de Empenho (AAAANE000000) e o valor empenhado."""
+        if request.user.profile.profile_role not in SOF_ROLES:
+            return Response({'detail': 'Acesso restrito ao SOF.'}, status=status.HTTP_403_FORBIDDEN)
+        empenho = (request.data.get('commitment_number') or '').strip()
+        if empenho and not EMPENHO_PATTERN.match(empenho):
+            return Response(
+                {'commitment_number': 'Formato inválido. Use AAAANE000000 (ex.: 2026NE000121).'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        travel = self.get_object()
+        travel.commitment_number = empenho
+        valor = request.data.get('committed_value')
+        if valor not in (None, ''):
+            from decimal import Decimal, InvalidOperation
+            try:
+                travel.committed_value = Decimal(str(valor))
+            except (InvalidOperation, ValueError):
+                return Response({'committed_value': 'Valor inválido.'}, status=status.HTTP_400_BAD_REQUEST)
+        travel.save(update_fields=['commitment_number', 'committed_value', 'updated_at'])
+        # Ao informar o empenho, o pedido é finalizado
+        if empenho and travel.status == TravelRequest.StatusChoices.UNDER_REVIEW:
+            travel.change_status(
+                TravelRequest.StatusChoices.COMPLETED,
+                changed_by=request.user.profile,
+                observation='Empenho informado pelo SOF; finalizada.',
+            )
+        return Response({
+            'commitment_number': travel.commitment_number,
+            'committed_value': str(travel.committed_value) if travel.committed_value is not None else None,
+            'status': travel.status, 'message': 'Empenho e valor salvos.',
+        })
+
+    @action(detail=True, methods=['post'], url_path='concluir-sdp')
+    def concluir_sdp(self, request, pk=None):
+        """
+        SLT marca a solicitação como lançada no SDP: conclui no SAV
+        (Solicitada → Finalizada). Restrita ao SLT (SIL) e ADMIN.
+        """
+        if request.user.profile.profile_role not in SLT_ROLES:
+            return Response(
+                {'detail': 'Acesso restrito ao SLT.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        travel = self.get_object()
+        try:
+            travel.change_status(
+                TravelRequest.StatusChoices.COMPLETED,
+                changed_by=request.user.profile,
+                observation='Lançada no SDP pelo SLT.',
+            )
+        except ValueError as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'status': travel.status, 'message': 'Solicitação concluída (lançada no SDP).'})
+
     @action(detail=True, methods=['get'], url_path='sdp-transcript')
     def sdp_transcript(self, request, pk=None):
         """
@@ -109,17 +238,41 @@ class TravelRequestSaguActionsMixin:
                     'empenho': budget.commitment_number if budget else '',
                 } if budget else None,
             })
+        from decimal import Decimal
+        advances = [
+            {
+                'natureza': a.get_nature_display(),
+                'valor': str(a.value),
+                'justificativa': a.justification,
+            }
+            for a in travel.advances.all()
+        ]
+        adv_total = sum((a.value for a in travel.advances.all()), Decimal('0.00'))
+        total_geral = travel.total_beneficiaries_value + adv_total
+        atividade = None
+        if travel.research_activity_id:
+            ra = travel.research_activity
+            atividade = {'codigo': ra.code, 'titulo': ra.description, 'saldo': str(ra.balance)}
+
         return Response({
             'numero_sav': travel.request_number,
             'status_sagu': SAGU_STATUS_LABELS.get(travel.status, travel.status),
+            'processo_sei': travel.sei_process,
+            'empenho': travel.commitment_number,
+            'valor_empenhado': str(travel.committed_value) if travel.committed_value is not None else None,
             'solicitante': travel.requester.full_name,
-            'modalidade': travel.modality,
-            'roteiro': f'{travel.origin_city}/{travel.origin_state} → {travel.destination} → {travel.origin_city}/{travel.origin_state}',
+            'meio_transporte': travel.get_transport_means_display(),
+            'roteiro': travel.itinerary or f'{travel.origin_city}/{travel.origin_state} → {travel.destination}',
             'saida': travel.departure_date,
             'retorno': travel.return_date,
-            'justificativa': travel.objective,
-            'projeto': str(travel.project) if travel.project_id else None,
-            'total_geral': str(travel.total_beneficiaries_value),
+            'descricao': travel.objective,
+            'observacoes': travel.observations,
+            'onus': travel.get_cost_type_display(),
+            'atividade': atividade,
+            'adiantamentos': advances,
+            'total_diarias': str(travel.total_beneficiaries_value),
+            'total_adiantamentos': str(adv_total),
+            'total_geral': str(total_geral),
             'favorecidos': beneficiaries,
         })
 
@@ -145,6 +298,10 @@ class WizardActionsMixin:
                 for v, l in TravelRequest.CostType.choices
                 if v != 'NO_EMBRAPA_COST'  # legado não aparece para novas viagens
             ],
+            'transport_means_choices': [
+                {'value': v, 'label': l}
+                for v, l in TravelRequest.TransportMeans.choices
+            ],
             'resource_lines': ResourceLineSerializer(
                 ResourceLine.objects.filter(active=True), many=True,
             ).data,
@@ -168,20 +325,29 @@ class WizardActionsMixin:
         da grade do SAGU (nº, modalidade, cidade, UF, ônus, status),
         independentemente do papel do usuário.
         """
+        from django.db.models import Q
         profile = request.user.profile
         trips = (
             TravelRequest.objects
-            .filter(requester=profile)
+            .filter(
+                Q(requester=profile)
+                | Q(beneficiaries__full_name=profile.full_name)  # viagens onde ele é favorecido
+            )
             .select_related('destination')
+            .prefetch_related('beneficiaries')
+            .distinct()
             .order_by('-created_at')
         )
         rows = [
             {
                 'id': str(t.id),
                 'numero': t.request_number,
-                'nome': t.get_trip_type_display() or t.modality,
-                'cidade': t.destination.city if t.destination else '',
-                'uf': t.destination.state if t.destination else '',
+                'favorecido': (
+                    t.beneficiaries.all()[0].full_name if t.beneficiaries.all()
+                    else t.requester.full_name
+                ),
+                'roteiro': t.itinerary or (str(t.destination) if t.destination else '—'),
+                'meio': t.get_transport_means_display() or '—',
                 'onus': t.get_cost_type_display(),
                 'status': SAGU_STATUS_LABELS.get(t.status, t.status),
                 'saida': t.departure_date,

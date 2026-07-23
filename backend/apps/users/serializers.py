@@ -1,6 +1,6 @@
 """apps/users/serializers.py — Serializers de perfil de usuário."""
 from rest_framework import serializers
-from .models import UserProfile
+from .models import UserProfile, Favorecido
 
 
 class UserProfileSummarySerializer(serializers.ModelSerializer):
@@ -10,6 +10,19 @@ class UserProfileSummarySerializer(serializers.ModelSerializer):
         fields = [
             'id', 'full_name', 'email', 'registration_number',
             'employee_type', 'profile_role', 'unit',
+        ]
+
+
+class FavorecidoSerializer(serializers.ModelSerializer):
+    """Pessoa buscada no cadastro do SAGU para o campo Favorecido."""
+    person_type_display = serializers.CharField(source='get_person_type_display', read_only=True)
+
+    class Meta:
+        model = Favorecido
+        fields = [
+            'id', 'full_name', 'person_type', 'person_type_display',
+            'registration_number', 'cpf', 'email',
+            'unit', 'position', 'chief_name', 'address', 'bank_info',
         ]
 
 

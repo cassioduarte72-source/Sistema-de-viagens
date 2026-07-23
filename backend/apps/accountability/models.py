@@ -37,6 +37,12 @@ class AccountabilityReport(BaseModel):
     actual_departure_date = models.DateField(null=True, blank=True, verbose_name='Saída Efetiva')
     actual_return_date = models.DateField(null=True, blank=True, verbose_name='Retorno Efetivo')
 
+    # Adiantamento efetivamente recebido pelo favorecido (diárias + outros)
+    advance_received = models.DecimalField(
+        max_digits=10, decimal_places=2, default=Decimal('0.00'),
+        verbose_name='Adiantamento Realizado (R$)',
+    )
+
     # Valores
     total_daily_received = models.DecimalField(
         max_digits=10, decimal_places=2, default=Decimal('0.00'),
@@ -64,6 +70,8 @@ class AccountabilityReport(BaseModel):
     )
     reviewed_at = models.DateTimeField(null=True, blank=True, verbose_name='Analisada em')
     review_notes = models.TextField(blank=True, verbose_name='Observações da Análise')
+    # Nota de Empenho da PCV (melhoria — não existe no SDP); informada pelo SOF
+    commitment_number = models.CharField(max_length=20, blank=True, verbose_name='Nota de Empenho (PCV)')
 
     class Meta:
         db_table = 'accountability_reports'
@@ -95,3 +103,103 @@ class AccountabilityReport(BaseModel):
     def requires_complement(self) -> bool:
         """True quando o viajante recebeu menos do que o devido (Embrapa complementa)."""
         return self.balance < 0
+
+    # ─── Totais da PCV (modelo SDP) ─────────────────────────────────────────
+    @property
+    def total_diarias(self) -> Decimal:
+        """Total de diárias da viagem (diárias × valor, dos favorecidos)."""
+        total = Decimal('0.00')
+        for b in self.travel_request.beneficiaries.all():
+            total += (b.daily_quantity or Decimal('0')) * (b.daily_rate or Decimal('0'))
+        return total
+
+    @property
+    def total_despesas_aprovadas(self) -> Decimal:
+        """Soma dos valores APROVADOS das despesas comprovadas."""
+        return sum(
+            (i.approved_value or Decimal('0.00') for i in self.expense_items.all()),
+            Decimal('0.00'),
+        )
+
+    @property
+    def valor_total_viagem(self) -> Decimal:
+        """Valor Total da Viagem = Total de Diárias + Despesas Aprovadas."""
+        return self.total_diarias + self.total_despesas_aprovadas
+
+    @property
+    def valor_a_devolver(self) -> Decimal:
+        """Adiantamento recebido a mais em relação ao total (devolver à Embrapa)."""
+        diff = (self.advance_received or Decimal('0.00')) - self.valor_total_viagem
+        return diff if diff > 0 else Decimal('0.00')
+
+    @property
+    def valor_a_receber(self) -> Decimal:
+        """Total maior que o adiantamento (a receber da Embrapa)."""
+        diff = self.valor_total_viagem - (self.advance_received or Decimal('0.00'))
+        return diff if diff > 0 else Decimal('0.00')
+
+
+class ExpenseItem(BaseModel):
+    """
+    Comprovação de Despesa da PCV (modelo SDP): tipo, descrição, valor comprovado
+    (informado pelo favorecido) e valor aprovado (ajustado pelo SOF na análise).
+    """
+
+    class ItemType(models.TextChoices):
+        LODGING = 'LODGING', 'Hospedagem'
+        TICKETS = 'TICKETS', 'Passagens'
+        TAXI = 'TAXI', 'Táxi'
+        TOLL_PARKING = 'TOLL_PARKING', 'Pedágio / Estacionamento'
+        SERVICES = 'SERVICES', 'Serviços'
+        FUEL = 'FUEL', 'Combustível'
+        OTHER = 'OTHER', 'Outros'
+
+    report = models.ForeignKey(
+        AccountabilityReport, on_delete=models.CASCADE,
+        related_name='expense_items', verbose_name='Prestação de Contas',
+    )
+    item_type = models.CharField(max_length=20, choices=ItemType.choices, verbose_name='Tipo')
+    description = models.CharField(max_length=255, verbose_name='Descrição')
+    proven_value = models.DecimalField(
+        max_digits=10, decimal_places=2, default=Decimal('0.00'),
+        verbose_name='Comprovado (R$)',
+    )
+    approved_value = models.DecimalField(
+        max_digits=10, decimal_places=2, default=Decimal('0.00'),
+        verbose_name='Aprovado (R$)',
+    )
+
+    class Meta:
+        db_table = 'accountability_expense_items'
+        verbose_name = 'Comprovação de Despesa'
+        verbose_name_plural = 'Comprovações de Despesa'
+        ordering = ['created_at']
+
+    def __str__(self):
+        return f'{self.get_item_type_display()} — {self.proven_value}'
+
+
+class AccountabilityRouting(BaseModel):
+    """
+    Histórico de Encaminhamento da PCV (modelo SDP): cada fase do processo com
+    natureza (o que aconteceu), usuário responsável, data e justificativa.
+    """
+    report = models.ForeignKey(
+        AccountabilityReport, on_delete=models.CASCADE,
+        related_name='routings', verbose_name='Prestação de Contas',
+    )
+    action = models.CharField(max_length=150, verbose_name='Natureza')
+    responsible = models.ForeignKey(
+        'users.UserProfile', null=True, on_delete=models.SET_NULL,
+        related_name='pcv_routings', verbose_name='Usuário Responsável',
+    )
+    note = models.TextField(blank=True, verbose_name='Justificativa')
+
+    class Meta:
+        db_table = 'accountability_routings'
+        verbose_name = 'Encaminhamento da PCV'
+        verbose_name_plural = 'Histórico de Encaminhamento'
+        ordering = ['created_at']
+
+    def __str__(self):
+        return f'{self.action} — {self.report.travel_request.request_number}'

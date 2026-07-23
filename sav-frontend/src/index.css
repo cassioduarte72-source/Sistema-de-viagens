@@ -176,3 +176,95 @@ button { font-family: inherit; cursor: pointer; }
 .block h3 { font-size: 14px; text-transform: uppercase; letter-spacing: .05em; color: var(--tinta-2); margin-bottom: 14px; }
 .kv { display: grid; grid-template-columns: 170px 1fr; gap: 6px 14px; font-size: 14px; }
 .kv dt { color: var(--tinta-2); } .kv dd { margin: 0; }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Formulário estilo SDP (Sistema de Diárias e Passagens) — visual fiel ao
+   sistema da Embrapa: cabeçalho, faixas azuis, rótulos à direita, tabelas
+   compactas e botões verdes. Autocontido em .sdp-form para não afetar o app.
+   ═══════════════════════════════════════════════════════════════════════ */
+.sdp-form {
+  font-family: Arial, 'IBM Plex Sans', sans-serif;
+  font-size: 12.5px; color: #222; background: #fff;
+  border: 1px solid #9db8cc; max-width: 820px;
+}
+.sdp-form input, .sdp-form select, .sdp-form textarea {
+  font: inherit; background: #eaf4f8; border: 1px solid #9db8cc;
+  padding: 3px 5px; border-radius: 0; width: 100%;
+}
+.sdp-form textarea { resize: vertical; }
+
+/* Cabeçalho do sistema */
+.sdp-appbar {
+  display: flex; align-items: center; gap: 14px;
+  background: linear-gradient(#ffffff, #e9f0f6);
+  border-bottom: 1px solid #9db8cc; padding: 8px 14px;
+}
+.sdp-logo { font-family: Arial, sans-serif; font-weight: 800; font-size: 22px; color: #2e8b3d; letter-spacing: -0.5px; }
+.sdp-logo span { color: #1f6f8b; }
+.sdp-sys { font-weight: 700; color: #2e8b57; font-size: 15px; }
+.sdp-userinfo { margin-left: auto; text-align: right; font-size: 11px; color: #444; }
+.sdp-topmenu {
+  display: flex; flex-wrap: wrap; background: #dfe8f0;
+  border-bottom: 1px solid #9db8cc; font-size: 12px;
+}
+.sdp-topmenu span { padding: 5px 14px; color: #1f4e79; border-right: 1px solid #c4d2df; }
+.sdp-crumb { font-size: 11.5px; color: #1f4e79; padding: 7px 10px; }
+
+/* Faixa de título centralizada (seções tabulares) */
+.sdp-band {
+  background: #c9ddef; border: 1px solid #a9c2da; text-align: center;
+  font-weight: bold; color: #1f3b57; padding: 5px; margin: 10px 10px 0;
+}
+/* Cabeçalho de grupo (à esquerda, cinza-azulado) */
+.sdp-group { margin: 10px; border: 1px solid #c4d2df; }
+.sdp-group-h { background: #dbe4ec; color: #33475c; font-weight: bold; padding: 4px 8px; border-bottom: 1px solid #c4d2df; }
+
+/* Linhas rótulo → valor */
+.sdp-row { display: flex; align-items: flex-start; border-top: 1px solid #e4ebf1; }
+.sdp-row:first-child { border-top: 0; }
+.sdp-row .lbl {
+  width: 155px; flex-shrink: 0; text-align: right; padding: 5px 8px;
+  color: #33475c; background: #f5f8fb; border-right: 1px solid #e4ebf1;
+}
+.sdp-row .lbl .req { color: #b3261e; }
+.sdp-row .val { flex: 1; padding: 5px 8px; }
+.sdp-row .val.plain { color: #222; }
+
+/* Tabelas (Diárias, Passagens, etc.) */
+.sdp-table { width: calc(100% - 20px); margin: 0 10px; border-collapse: collapse; }
+.sdp-table th { background: #dbe7f1; border: 1px solid #c4d2df; padding: 4px 6px; font-weight: bold; color: #25415c; font-size: 11.5px; }
+.sdp-table td { border: 1px solid #e4ebf1; padding: 3px 4px; }
+.sdp-table td.num { text-align: right; font-family: var(--mono); }
+.sdp-tools { display: flex; justify-content: flex-end; gap: 6px; margin: 6px 10px 0; }
+
+.sdp-link { color: #1a5276; text-decoration: underline; font-size: 12px; display: inline-block; padding: 6px 0; cursor: pointer; background: none; border: 0; }
+.sdp-total { margin: 8px 10px; text-align: right; font-weight: bold; color: #25415c; }
+
+/* Botões */
+.sdp-actions { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 12px 10px; margin-top: 10px; border-top: 1px solid #c4d2df; background: #f5f8fb; }
+.sdp-btn { padding: 5px 16px; border: 1px solid #4e8b3a; background: #5aa146; color: #fff; font-weight: bold; border-radius: 3px; font-size: 12.5px; }
+.sdp-btn:hover { filter: brightness(1.06); }
+.sdp-btn.gray { background: #ececec; color: #333; border: 1px solid #b7b7b7; }
+.sdp-mini { padding: 2px 9px; border: 1px solid #7aa76a; background: #6aa84f; color: #fff; border-radius: 3px; font-weight: bold; font-size: 12px; }
+.sdp-mini.rem { background: #c9564e; border-color: #a63b34; }
+
+/* Autocomplete do campo Favorecido (busca no SAGU) */
+.sdp-ac {
+  position: absolute; top: 100%; left: 0; right: 0; z-index: 20;
+  background: #fff; border: 1px solid #9db8cc; border-top: 0;
+  max-height: 220px; overflow-y: auto; box-shadow: 0 6px 16px rgba(0,0,0,.12);
+}
+.sdp-ac-item {
+  display: block; width: 100%; text-align: left; border: 0; background: #fff;
+  padding: 6px 9px; font-size: 12.5px; color: #1f3b57; border-bottom: 1px solid #eef3f7;
+}
+.sdp-ac-item:hover { background: #eaf4f8; }
+.sdp-ac-item span { color: #667; font-size: 11.5px; }
+
+/* Impressão da Autorização de Viagem (AV): esconde tudo, mostra só o documento */
+@media print {
+  body * { visibility: hidden; }
+  .av-doc, .av-doc * { visibility: visible; }
+  .av-doc { position: absolute; left: 0; top: 0; width: 100%; border: 0; }
+  .no-print { display: none !important; }
+}

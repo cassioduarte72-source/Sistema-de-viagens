@@ -7,7 +7,8 @@ TRAVEL_ANALYST / FINANCE / ADMIN: leitura total; escrita apenas ADMIN.
 """
 from rest_framework import permissions
 
-ELEVATED_ROLES = ('TRAVEL_ANALYST', 'FINANCE', 'ADMIN')
+# SIL = SLT (Logística/Transporte): enxerga as solicitações encaminhadas
+ELEVATED_ROLES = ('TRAVEL_ANALYST', 'FINANCE', 'ADMIN', 'SIL')
 
 
 class TravelRequestPermission(permissions.BasePermission):
@@ -25,14 +26,20 @@ class TravelRequestPermission(permissions.BasePermission):
         role = profile.profile_role
         action = getattr(view, 'action', None)
 
-        # Papéis elevados: leitura total; SOF/analista também alteram status
+        # Papéis elevados: leitura total; SOF/analista alteram status;
+        # SLT conclui (lança no SDP) e informa o processo SEI
         if role in ELEVATED_ROLES:
             if request.method in permissions.SAFE_METHODS or role == 'ADMIN':
                 return True
-            return action == 'change_status'
+            return action in ('change_status', 'concluir_sdp', 'informar_sei', 'informar_empenho')
 
         # Dono da solicitação: acesso total (edição controlada pelo status na view)
         if obj.requester_id == profile.id:
+            return True
+
+        # Participante da viagem (favorecido): apenas leitura
+        if request.method in permissions.SAFE_METHODS and \
+                obj.beneficiaries.filter(full_name=profile.full_name).exists():
             return True
 
         # Supervisor da equipe: leitura + ações de decisão sobre o status

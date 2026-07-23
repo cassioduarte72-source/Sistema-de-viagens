@@ -102,6 +102,42 @@ def notify_decision_made(self, travel_request_id: str, decision: str):
         raise self.retry(exc=exc)
 
 
+@shared_task(bind=True, max_retries=3, default_retry_delay=60)
+def notify_av_ready(self, travel_request_id: str):
+    """
+    E-mail 'AV pronta' disparado quando o SLT informa o SEI — enviado ao
+    solicitante e aos envolvidos (favorecidos com e-mail).
+    TEXTO-BASE: o texto padrão definitivo será fornecido depois.
+    """
+    try:
+        from apps.travel_requests.models import TravelRequest
+        travel = TravelRequest.objects.select_related('requester').get(id=travel_request_id)
+        recipients = [travel.requester.email] + [
+            b.email for b in travel.beneficiaries.all() if b.email
+        ]
+        recipients = list({r for r in recipients if r})
+        if not recipients:
+            return
+        message = (
+            'Prezado(a),\n\n'
+            f'A Autorização de Viagem {travel.request_number} está pronta.\n'
+            f'Processo SEI: {travel.sei_process or "—"}\n'
+            f'Período: {travel.departure_date} a {travel.return_date}\n\n'
+            f'Acesse o SAV: {settings.FRONTEND_URL}\n\n'
+            '[TEXTO PADRÃO A DEFINIR]\n\n'
+            'Atenciosamente,\nSistema de Autorização de Viagens — Embrapa'
+        )
+        send_mail(
+            subject=f'[SAV Embrapa] Autorização de Viagem pronta — {travel.request_number}',
+            message=message, from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=recipients, fail_silently=True,
+        )
+        logger.info(f'E-mail "AV pronta" enviado — {travel.request_number}')
+    except Exception as exc:
+        logger.error(f'Erro ao notificar AV pronta: {exc}', exc_info=True)
+        raise self.retry(exc=exc)
+
+
 @shared_task
 def notify_pending_accountability():
     """

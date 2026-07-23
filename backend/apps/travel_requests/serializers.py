@@ -26,6 +26,10 @@ class TravelRequestListSerializer(serializers.ModelSerializer):
     destination_label = serializers.CharField(source='destination.__str__', read_only=True)
     total_days = serializers.IntegerField(read_only=True)
     status_display = serializers.CharField(source='get_status_display', read_only=True)
+    has_vehicle = serializers.SerializerMethodField()
+
+    def get_has_vehicle(self, obj):
+        return obj.vehicle_requisitions.exists()
 
     class Meta:
         model = TravelRequest
@@ -33,7 +37,7 @@ class TravelRequestListSerializer(serializers.ModelSerializer):
             'id', 'request_number', 'requester_name', 'destination_label',
             'departure_date', 'return_date', 'total_days', 'status',
             'status_display', 'employee_type', 'cost_type',
-            'estimated_daily_total', 'needs_flights', 'created_at',
+            'estimated_daily_total', 'needs_flights', 'has_vehicle', 'created_at',
         ]
 
 
@@ -49,6 +53,11 @@ class TravelRequestDetailSerializer(serializers.ModelSerializer):
         max_digits=12, decimal_places=2, read_only=True,
     )
     project_detail = serializers.SerializerMethodField()
+    advances = serializers.SerializerMethodField()
+    advances_total = serializers.SerializerMethodField()
+    research_activity_detail = serializers.SerializerMethodField()
+    transport_means_display = serializers.CharField(source='get_transport_means_display', read_only=True)
+    cost_type_display = serializers.CharField(source='get_cost_type_display', read_only=True)
 
     def get_beneficiaries(self, obj):
         return TravelBeneficiarySerializer(obj.beneficiaries.all(), many=True).data
@@ -56,6 +65,18 @@ class TravelRequestDetailSerializer(serializers.ModelSerializer):
     def get_project_detail(self, obj):
         if obj.project_id:
             return ResearchProjectSerializer(obj.project).data
+        return None
+
+    def get_advances(self, obj):
+        return TravelAdvanceSerializer(obj.advances.all(), many=True).data
+
+    def get_advances_total(self, obj):
+        from decimal import Decimal
+        return str(sum((a.value for a in obj.advances.all()), Decimal('0.00')))
+
+    def get_research_activity_detail(self, obj):
+        if obj.research_activity_id:
+            return ResearchActivitySerializer(obj.research_activity).data
         return None
 
     class Meta:
@@ -112,16 +133,16 @@ class TravelRequestDetailSerializer(serializers.ModelSerializer):
                 {'sponsor': 'Selecione o patrocinador que custeará a viagem.'}
             )
 
-        # Regra 5: justificativa de excepcionalidade para viagem aérea
-        # solicitada com menos de N dias de antecedência (padrão SAGU: 17)
-        if data.get('trip_type') == TravelRequest.TripType.AIR and departure:
-            exc_days = int(SystemConfig.get_value('EXCEPTIONALITY_ADVANCE_DAYS', '17'))
-            if (departure - date.today()).days < exc_days:
+        # Regra 5: justificativa obrigatória para viagens solicitadas com menos
+        # de N dias de antecedência (padrão: 15 dias) — vale para qualquer viagem
+        if departure:
+            just_days = int(SystemConfig.get_value('JUSTIFICATION_ADVANCE_DAYS', '15'))
+            if (departure - date.today()).days < just_days:
                 if not (data.get('exceptionality_justification') or '').strip():
                     raise serializers.ValidationError({
                         'exceptionality_justification': (
-                            f'Viagem aérea com menos de {exc_days} dias de antecedência '
-                            f'exige justificativa de excepcionalidade.'
+                            f'Viagens solicitadas com menos de {just_days} dias de '
+                            f'antecedência exigem justificativa.'
                         )
                     })
 
@@ -212,7 +233,7 @@ class TravelAuthorizationSerializer(serializers.ModelSerializer):
 import re
 from .models import (
     TravelBeneficiary, BudgetAllocation, ResearchProject,
-    FundingAgency, StatusChange,
+    FundingAgency, StatusChange, ResearchActivity,
 )
 
 SEI_PATTERN = re.compile(r'^\d{5}\.\d{6}/\d{4}-\d{2}$')
@@ -238,6 +259,15 @@ class BudgetAllocationSerializer(serializers.ModelSerializer):
     class Meta:
         model = BudgetAllocation
         fields = '__all__'
+
+
+class ResearchActivitySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ResearchActivity
+        fields = [
+            'id', 'code', 'description', 'responsible',
+            'start_date', 'end_date', 'balance',
+        ]
 
 
 class TravelBeneficiarySerializer(serializers.ModelSerializer):
@@ -271,6 +301,18 @@ class TravelBeneficiarySerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 {'end_date': 'Fim do período deve ser igual ou posterior ao início.'}
             )
+        # Bloqueio por inadimplência: CPF com PCV vencida não pode nova viagem
+        cpf = (data.get('cpf') or '').strip()
+        if cpf:
+            from apps.users.models import Favorecido
+            bloqueado = Favorecido.objects.filter(cpf=cpf, blocked=True).first()
+            if bloqueado:
+                raise serializers.ValidationError({
+                    'cpf': (
+                        f'{bloqueado.full_name} está com o CPF bloqueado por prestação '
+                        f'de contas pendente. Regularize antes de solicitar nova viagem.'
+                    )
+                })
         return data
 
 
@@ -288,7 +330,15 @@ class StatusChangeSerializer(serializers.ModelSerializer):
 # ═══════════════════════════════════════════════════════════════════════════
 # Serializers do wizard (portal do solicitante)
 # ═══════════════════════════════════════════════════════════════════════════
-from .models import Sponsor, ResourceLine, FlightTicket
+from .models import Sponsor, ResourceLine, FlightTicket, TravelAdvance
+
+
+class TravelAdvanceSerializer(serializers.ModelSerializer):
+    nature_display = serializers.CharField(source='get_nature_display', read_only=True)
+
+    class Meta:
+        model = TravelAdvance
+        fields = '__all__'
 
 
 class SponsorSerializer(serializers.ModelSerializer):

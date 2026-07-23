@@ -44,9 +44,9 @@ class WizardTestBase(TestCase):
 
 
 class TestAirExceptionality(WizardTestBase):
-    """Viagem aérea < 17 dias de antecedência exige justificativa."""
+    """Viagem com < 15 dias de antecedência exige justificativa (qualquer meio)."""
 
-    def test_air_short_notice_requires_justification(self):
+    def test_short_notice_requires_justification(self):
         r = self.client_api.post(
             '/api/v1/travel-requests/',
             self.payload(trip_type='AIR', days_ahead=10),
@@ -55,7 +55,7 @@ class TestAirExceptionality(WizardTestBase):
         assert r.status_code == 400
         assert 'exceptionality_justification' in r.json()
 
-    def test_air_short_notice_with_justification_ok(self):
+    def test_short_notice_with_justification_ok(self):
         r = self.client_api.post(
             '/api/v1/travel-requests/',
             self.payload(
@@ -66,7 +66,7 @@ class TestAirExceptionality(WizardTestBase):
         )
         assert r.status_code == 201, r.content
 
-    def test_air_long_notice_no_justification_needed(self):
+    def test_long_notice_no_justification_needed(self):
         r = self.client_api.post(
             '/api/v1/travel-requests/',
             self.payload(trip_type='AIR', days_ahead=30),
@@ -74,14 +74,15 @@ class TestAirExceptionality(WizardTestBase):
         )
         assert r.status_code == 201, r.content
 
-    def test_ground_trip_short_notice_no_justification_needed(self):
-        """Regra dos 17 dias vale só para aérea (terrestre segue o mínimo geral)."""
+    def test_ground_trip_short_notice_also_requires_justification(self):
+        """Nova regra (15 dias) vale para qualquer meio, inclusive terrestre."""
         r = self.client_api.post(
             '/api/v1/travel-requests/',
             self.payload(trip_type='EMBRAPA_NO_SLT', days_ahead=10),
             format='json',
         )
-        assert r.status_code == 201, r.content
+        assert r.status_code == 400
+        assert 'exceptionality_justification' in r.json()
 
 
 class TestCostSourceRules(WizardTestBase):
@@ -141,5 +142,7 @@ class TestWizardMetadata(WizardTestBase):
         rows = r.json()
         assert len(rows) == 1
         assert rows[0]['status'] == 'Rascunho'
-        assert rows[0]['uf'] == 'PE'
+        # Grade nova mostra Favorecido/Roteiro/Meio (sem cidade/uf separados)
+        assert rows[0]['favorecido'] == 'Wiz User'
+        assert 'Recife' in rows[0]['roteiro']
         assert rows[0]['pode_cancelar'] is True

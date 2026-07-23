@@ -1,5 +1,20 @@
 from django.contrib import admin
-from .models import TravelRequest, TravelAuthorization, Destination
+from .models import (
+    TravelRequest, TravelAuthorization, Destination, ResearchActivity, TravelAdvance,
+)
+
+
+@admin.register(ResearchActivity)
+class ResearchActivityAdmin(admin.ModelAdmin):
+    list_display = ('code', 'description', 'responsible', 'balance', 'active')
+    list_filter = ('active',)
+    search_fields = ('code', 'description', 'responsible')
+
+
+@admin.register(TravelAdvance)
+class TravelAdvanceAdmin(admin.ModelAdmin):
+    list_display = ('travel_request', 'nature', 'value')
+    list_filter = ('nature',)
 
 
 @admin.register(TravelRequest)
