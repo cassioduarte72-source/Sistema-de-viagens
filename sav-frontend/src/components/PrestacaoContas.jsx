@@ -116,7 +116,12 @@ export default function PrestacaoContas() {
             <span className="status" data-s={pcv.status_display}>{pcv.status_display}</span>
           </p>
         </div>
-        <button className="btn quiet" onClick={() => { setPcv(null); carregarElegiveis(); }}>Voltar</button>
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button className="btn ghost" onClick={() => api.baixarPcvPdf(pcv.id, pcv.trip.request_number).catch((e) => setError(firstError(e)))}>
+            Baixar PDF (SEI)
+          </button>
+          <button className="btn quiet" onClick={() => { setPcv(null); carregarElegiveis(); }}>Voltar</button>
+        </div>
       </div>
       {error && <div className="alert error">{error}</div>}
 

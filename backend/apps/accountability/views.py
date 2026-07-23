@@ -80,6 +80,18 @@ class AccountabilityReportViewSet(viewsets.ModelViewSet):
             })
         return Response(rows)
 
+    @action(detail=True, methods=['get'], url_path='pdf')
+    def pdf(self, request, pk=None):
+        """Gera o PDF da PCV (formato SDP) para subir no processo SEI."""
+        from django.http import HttpResponse
+        from .pdf import build_pcv_pdf
+        report = self.get_object()
+        conteudo = build_pcv_pdf(report)
+        resp = HttpResponse(conteudo, content_type='application/pdf')
+        nome = f'PCV-{report.travel_request.request_number}.pdf'
+        resp['Content-Disposition'] = f'attachment; filename="{nome}"'
+        return resp
+
     @action(detail=False, methods=['get'], url_path='analise')
     def analise(self, request):
         """Caixa de análise do SOF: prestações enviadas aguardando atesto."""

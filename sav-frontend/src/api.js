@@ -104,6 +104,17 @@ export const api = {
   pcv: (id) => request(`/accountability/${id}/`),
   updatePcv: (id, payload) => request(`/accountability/${id}/`, { method: 'PATCH', body: payload }),
   submitPcv: (id) => request(`/accountability/${id}/submit/`, { method: 'POST' }),
+  baixarPcvPdf: async (id, numero) => {
+    const r = await fetch(`${BASE}/accountability/${id}/pdf/`, {
+      headers: tokens.access ? { Authorization: `Bearer ${tokens.access}` } : {},
+    });
+    if (!r.ok) throw new ApiError(r.status, null);
+    const url = URL.createObjectURL(await r.blob());
+    const a = document.createElement('a');
+    a.href = url; a.download = `PCV-${numero || id}.pdf`;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+  },
   addExpense: (payload) => request('/expense-items/', { method: 'POST', body: payload }),
   updateExpense: (id, payload) => request(`/expense-items/${id}/`, { method: 'PATCH', body: payload }),
   deleteExpense: (id) => request(`/expense-items/${id}/`, { method: 'DELETE' }),
