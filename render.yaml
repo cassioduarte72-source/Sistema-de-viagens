@@ -1,0 +1,31 @@
+# render.yaml — publica o SAV no Render (https://render.com) com um clique.
+# No Render: New → Blueprint → conectar este repositório → Apply.
+# Ao final, o Render gera um endereço público (ex.: sistema-sav.onrender.com).
+
+databases:
+  - name: sav-db
+    plan: free
+    databaseName: sav
+    user: sav
+
+services:
+  - type: web
+    name: sistema-sav
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: sav-db
+          property: connectionString
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DEBUG
+        value: "False"
+      - key: ALLOWED_HOSTS
+        value: "*"
+      # Executa tarefas de e-mail de forma síncrona (sem worker separado).
+      # E-mails são impressos nos logs (sem SMTP) — trocar em produção real.
+      - key: CELERY_TASK_ALWAYS_EAGER
+        value: "True"

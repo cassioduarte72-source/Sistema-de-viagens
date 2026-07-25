@@ -37,6 +37,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',  # serve estáticos e o frontend em produção
     'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -67,7 +68,12 @@ TEMPLATES = [
 WSGI_APPLICATION = 'config.wsgi.application'
 
 # ─── Banco de dados ──────────────────────────────────────────────────────────
-if config('DB_ENGINE', default='postgresql') == 'sqlite3':
+# Em produção (Render etc.), usa DATABASE_URL; localmente, SQLite (DB_ENGINE=sqlite3).
+_DATABASE_URL = config('DATABASE_URL', default='')
+if _DATABASE_URL:
+    import dj_database_url
+    DATABASES = {'default': dj_database_url.parse(_DATABASE_URL, conn_max_age=600)}
+elif config('DB_ENGINE', default='postgresql') == 'sqlite3':
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.sqlite3',
@@ -163,6 +169,26 @@ USE_TZ = True
 STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# WhiteNoise: compressão dos estáticos do Django (admin etc.)
+STORAGES = {
+    'default': {'BACKEND': 'django.core.files.storage.FileSystemStorage'},
+    'staticfiles': {'BACKEND': 'whitenoise.storage.CompressedManifestStaticFilesStorage'},
+}
+
+# Em produção, o build do frontend (React) é servido na raiz pelo WhiteNoise.
+# O Dockerfile coloca o build em backend/frontend_dist; localmente isso não existe
+# (o frontend roda separado no Vite), então o Django não interfere no dev.
+_FRONTEND_DIST = BASE_DIR / 'frontend_dist'
+if _FRONTEND_DIST.is_dir():
+    WHITENOISE_ROOT = _FRONTEND_DIST
+    WHITENOISE_INDEX_FILE = True
+
+# Render (produção): libera o domínio gerado e o CSRF do HTTPS
+_RENDER_HOST = config('RENDER_EXTERNAL_HOSTNAME', default='')
+if _RENDER_HOST:
+    ALLOWED_HOSTS.append(_RENDER_HOST)
+    CSRF_TRUSTED_ORIGINS = [f'https://{_RENDER_HOST}']
 
 AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator', 'OPTIONS': {'min_length': 8}},
